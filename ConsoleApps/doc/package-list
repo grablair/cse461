@@ -1,0 +1,8 @@
+edu.uw.cs.cse461.consoleapps
+edu.uw.cs.cse461.consoleapps.infrastructure
+edu.uw.cs.cse461.consoleapps.solution
+edu.uw.cs.cse461.net.base
+edu.uw.cs.cse461.net.rpc
+edu.uw.cs.cse461.net.tcpmessagehandler
+edu.uw.cs.cse461.service
+edu.uw.cs.cse461.util

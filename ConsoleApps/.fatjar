@@ -1,0 +1,14 @@
+#Fat Jar Configuration File
+#Sun Dec 16 15:43:58 PST 2012
+onejar.license.required=false
+manifest.classpath=
+manifest.removesigners=true
+onejar.checkbox=false
+jarname=ConsoleApps.jar
+manifest.mergeall=true
+manifest.mainclass=edu.uw.cs.cse461.consoleapps.infrastructure.ConsoleStart
+manifest.file=<createnew>
+jarname.isextern=false
+onejar.expand=
+excludes=
+includes=
