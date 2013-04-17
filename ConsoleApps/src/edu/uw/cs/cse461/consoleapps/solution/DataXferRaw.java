@@ -133,21 +133,29 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 			DatagramPacket packet = new DatagramPacket(header, header.length, new InetSocketAddress(hostIP, udpPort));
 			socket.send(packet);
 			
-			int bytesLeft = xferLength;
-			try {
+			byte[] result = new byte[xferLength];
+			
+			int bytesRead = 0;
+			try {				
 				byte[] receiveBuf = new byte[header.length + 1000];
 				DatagramPacket receivePacket = new DatagramPacket(receiveBuf, receiveBuf.length);
-				while (bytesLeft > 0) {
+				while (bytesRead < xferLength) {
 					socket.receive(receivePacket);
-					if ( receivePacket.getLength() != Math.min(1000, bytesLeft) + header.length )
+					if ( receivePacket.getLength() != Math.min(1000, xferLength - bytesRead) + header.length )
 						throw new Exception("Bad response: did not get back a multiple of 1000 bytes and is not final packet.");
 					String rcvdHeader = new String(receiveBuf, 0, 4);
 					if ( !rcvdHeader.equalsIgnoreCase(EchoServiceBase.RESPONSE_OKAY_STR) )
 						throw new Exception("Bad returned header: got '" + rcvdHeader + "' but wanted '" + EchoServiceBase.RESPONSE_OKAY_STR);
-					bytesLeft -= Math.min(1000, bytesLeft);
+					
+					// Copy section of data to result
+					for (int i = header.length; i < receivePacket.getLength(); i++)
+						result[bytesRead+i] = receiveBuf[i];
+					
+					// Increment data read.
+					bytesRead += receivePacket.getLength() - header.length;
 				}
 				socket.close();
-				return Arrays.copyOfRange(receiveBuf, header.length, receiveBuf.length);
+				return result;
 			} catch (SocketTimeoutException e) {
 				System.out.println("UDP socket timeout");
 			}
@@ -184,6 +192,7 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 		return TransferRate.get("udp");
 	}
 	
+	private static final int MAX_CHUNK_SIZE = 1000000;
 
 	/**
 	 * Method to actually transfer data over TCP, without measuring performance.
@@ -202,24 +211,35 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 			os.write(EchoServiceBase.HEADER_BYTES);
 			tcpSocket.shutdownOutput();
 			
-			int bytesRead = 0;
-			int totalBytes = xferLength + EchoServiceBase.HEADER_LEN;
-			byte[] receiveBuf = new byte[1000000];
-			while (bytesRead < totalBytes) {
+			byte[] result = new byte[xferLength];
+			
+			int bytesRead = -header.length;
+			byte[] receiveBuf = new byte[MAX_CHUNK_SIZE];
+			while (bytesRead < xferLength) {
 				int len = is.read(receiveBuf);
 				if (len == 0)
 					throw new Exception("Didn't read anything.");
-				if (bytesRead == 0) {
+				if (bytesRead == -header.length) {
+					// Check header if first chunk.
 					String headerStr = new String(receiveBuf);
 					if ( !headerStr.equalsIgnoreCase(EchoServiceBase.RESPONSE_OKAY_STR))
 						throw new Exception("Bad response header: got '" + headerStr + "' but expected '" + EchoServiceBase.HEADER_STR + "'");
+					
+					// Copy into result array.
+					for (int i = header.length; i < receiveBuf.length; i++)
+						result[i-header.length] = receiveBuf[i];
+				} else {
+					//Copy into result array.
+					for (int i = 0; i < receiveBuf.length; i++)
+						result[bytesRead+i] = receiveBuf[i];
 				}
 				bytesRead += len;
 			}
-			return receiveBuf;
+			return result;
 		} catch (Exception e) {
 			System.out.println("Exception: " + e.getMessage());
 		}
+		
 		return null;
 	}
 	
