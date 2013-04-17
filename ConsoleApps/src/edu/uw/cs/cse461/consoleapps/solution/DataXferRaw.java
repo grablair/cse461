@@ -9,12 +9,15 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.util.Arrays;
 
 import edu.uw.cs.cse461.consoleapps.DataXferInterface.DataXferRawInterface;
 import edu.uw.cs.cse461.net.base.NetBase;
 import edu.uw.cs.cse461.net.base.NetLoadable.NetLoadableConsoleApp;
 import edu.uw.cs.cse461.service.DataXferRawService;
 import edu.uw.cs.cse461.service.DataXferServiceBase;
+import edu.uw.cs.cse461.service.EchoServiceBase;
 import edu.uw.cs.cse461.util.ConfigManager;
 import edu.uw.cs.cse461.util.SampledStatistic.TransferRate;
 import edu.uw.cs.cse461.util.SampledStatistic.TransferRateInterval;
@@ -122,6 +125,36 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 	public byte[] udpDataXfer(byte[] header, String hostIP, int udpPort, int socketTimeout, int xferLength) throws IOException {
 		//TODO: implement this method
 		//(note it is used by udpDataXferRate, an important method for you to look at)
+		
+		try {
+			DatagramSocket socket = new DatagramSocket();
+			socket.setSoTimeout(socketTimeout); // wait at most a bounded time when receiving on this socket
+	
+			DatagramPacket packet = new DatagramPacket(header, header.length, new InetSocketAddress(hostIP, udpPort));
+			socket.send(packet);
+			
+			int bytesLeft = xferLength;
+			try {
+				byte[] receiveBuf = new byte[header.length + 1000];
+				DatagramPacket receivePacket = new DatagramPacket(receiveBuf, receiveBuf.length);
+				while (bytesLeft > 0) {
+					socket.receive(receivePacket);
+					if ( receivePacket.getLength() != Math.min(1000, bytesLeft) + header.length )
+						throw new Exception("Bad response: did not get back a multiple of 1000 bytes and is not final packet.");
+					String rcvdHeader = new String(receiveBuf, 0, 4);
+					if ( !rcvdHeader.equalsIgnoreCase(EchoServiceBase.RESPONSE_OKAY_STR) )
+						throw new Exception("Bad returned header: got '" + rcvdHeader + "' but wanted '" + EchoServiceBase.RESPONSE_OKAY_STR);
+					bytesLeft -= Math.min(1000, bytesLeft);
+				}
+				socket.close();
+				return Arrays.copyOfRange(receiveBuf, header.length, receiveBuf.length);
+			} catch (SocketTimeoutException e) {
+				System.out.println("UDP socket timeout");
+			}
+		} catch (Exception e) {
+			System.out.println("Exception: " + e.getMessage());
+		}
+		
 		return null;
 	}
 	
@@ -159,6 +192,34 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 	public byte[] tcpDataXfer(byte[] header, String hostIP, int tcpPort, int socketTimeout, int xferLength) throws IOException {
 		//TODO: implement this method
 		//(note it is used by tcpDataXferRate, an important method for you to look at)		
+		try {
+			Socket tcpSocket = new Socket(hostIP, tcpPort);
+			tcpSocket.setSoTimeout(socketTimeout);
+			InputStream is = tcpSocket.getInputStream();
+			OutputStream os = tcpSocket.getOutputStream();
+			
+			// send header
+			os.write(EchoServiceBase.HEADER_BYTES);
+			tcpSocket.shutdownOutput();
+			
+			int bytesRead = 0;
+			int totalBytes = xferLength + EchoServiceBase.HEADER_LEN;
+			byte[] receiveBuf = new byte[1000000];
+			while (bytesRead < totalBytes) {
+				int len = is.read(receiveBuf);
+				if (len == 0)
+					throw new Exception("Didn't read anything.");
+				if (bytesRead == 0) {
+					String headerStr = new String(receiveBuf);
+					if ( !headerStr.equalsIgnoreCase(EchoServiceBase.RESPONSE_OKAY_STR))
+						throw new Exception("Bad response header: got '" + headerStr + "' but expected '" + EchoServiceBase.HEADER_STR + "'");
+				}
+				bytesRead += len;
+			}
+			return receiveBuf;
+		} catch (Exception e) {
+			System.out.println("Exception: " + e.getMessage());
+		}
 		return null;
 	}
 	
