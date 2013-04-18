@@ -13,8 +13,8 @@ public interface DataXferInterface {
 		// These interfaces provide the data that was received.  (The returned array is of length xferLength if
 		// there are no transfer errors.)  Parameter xferLength is the number of data bytes that should be sent back
 		// in each response packet.
-		public byte[] udpDataXfer(byte[] header, String hostIP, int udpPort, int timeout, int xferLength) throws IOException;
-		public byte[] tcpDataXfer(byte[] header, String hostIP, int tcpPort, int timeout, int xferLength) throws IOException;
+		public byte[] udpDataXfer(byte[] header, String hostIP, int udpPort, int timeout, int xferLength) throws IOException, Exception;
+		public byte[] tcpDataXfer(byte[] header, String hostIP, int tcpPort, int timeout, int xferLength) throws IOException, Exception;
 
 		// These interfaces provide transfer rate information, but not the data transferred.  They simply
 		// instrument calls to the methods above.
