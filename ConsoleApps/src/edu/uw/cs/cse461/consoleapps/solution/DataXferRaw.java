@@ -151,8 +151,9 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 						throw new Exception("Bad returned header: got '" + rcvdHeader + "' but wanted '" + DataXferServiceBase.RESPONSE_OKAY_STR);
 					}
 					// Copy section of data to result
-					for (int i = header.length; i < receivePacket.getLength(); i++)
-						result[bytesRead+i] = receiveBuf[i];
+					int receivedlen = receivePacket.getLength() - header.length;
+					for (int i = 0; i < receivedlen; i++)
+						result[i] = receiveBuf[i + header.length];
 					
 					// Increment data read.
 					bytesRead += receivePacket.getLength() - header.length;

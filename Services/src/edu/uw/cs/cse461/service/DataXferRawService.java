@@ -58,6 +58,59 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 		return "";
 
 	}
+	
+	private void Datagram(int port) throws Exception{
+		DatagramSocket mDatagramSocket;
+			
+		String serverIP = IPFinder.localIP();
+		if ( serverIP == null ) throw new Exception("IPFinder isn't providing the local IP address.  Can't run.");
+		mDatagramSocket = new DatagramSocket(new InetSocketAddress(serverIP, port));
+		mDatagramSocket.setSoTimeout(NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
+		
+		Log.i(TAG,  "Datagram socket = " + mDatagramSocket.getLocalSocketAddress());
+		
+		byte receiveBuf[] = new byte[HEADER_STR.length()];
+		
+		DatagramPacket packet = new DatagramPacket(receiveBuf, receiveBuf.length);
+
+		//	Thread termination in this code is primitive.  When shutdown() is called (by the
+		//	application's main thread, so asynchronously to the threads just mentioned) it
+		//	closes the sockets.  This causes an exception on any thread trying to read from
+		//	it, which is what provokes thread termination.
+		try {
+			while ( !mAmShutdown ) {
+				try {
+					mDatagramSocket.receive(packet);
+					if ( packet.getLength() < HEADER_STR.length() )
+						throw new Exception("Bad header: length = " + packet.getLength());
+					String headerStr = new String( receiveBuf, 0, HEADER_STR.length() );
+					if ( ! headerStr.equalsIgnoreCase(HEADER_STR) )
+						throw new Exception("Bad header: got '" + headerStr + "', wanted '" + HEADER_STR + "'");
+
+					byte[] data = new byte[XFERSIZE[port - mBasePort]];
+					for(int i = 0 ; i < data.length; i++) {
+						data[i] = 1;
+					}
+					int bytesSent = 0;
+					while (bytesSent < data.length) {
+						byte[] part = new byte[HEADER_STR.length() + Math.min(data.length - bytesSent, 1000)];
+						System.arraycopy(RESPONSE_OKAY_STR.getBytes(), 0, part, 0, HEADER_STR.length());
+						System.arraycopy(data, bytesSent, part, HEADER_STR.length(), part.length - HEADER_STR.length());
+						DatagramPacket sendpacket = new DatagramPacket(part, part.length, packet.getAddress(), packet.getPort());
+						mDatagramSocket.send( sendpacket);
+						bytesSent += part.length - HEADER_STR.length();
+					}
+				} catch (SocketTimeoutException e) {
+					// socket timeout is normal
+				} catch (Exception e) {
+					Log.w(TAG,  "Dgram reading thread caught " + e.getClass().getName() + " exception: " + e.getMessage());
+				}
+			}
+		} finally {
+			if ( mDatagramSocket != null ) { mDatagramSocket.close(); mDatagramSocket = null; }
+		}
+
+	}
 
 	private class DgramThread extends Thread {
 		int port;
@@ -65,18 +118,18 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 
 		DgramThread(int portnum) throws Exception {
 			this.port = portnum;
-			
+
 			String serverIP = IPFinder.localIP();
 			if ( serverIP == null ) throw new Exception("IPFinder isn't providing the local IP address.  Can't run.");
 			this.mDatagramSocket = new DatagramSocket(new InetSocketAddress(serverIP, port));
 			this.mDatagramSocket.setSoTimeout(NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
-			
+
 			Log.i(TAG,  "Datagram socket = " + mDatagramSocket.getLocalSocketAddress());
 		}
 
 		public void run() {
 			byte receiveBuf[] = new byte[HEADER_STR.length()];
-			
+
 			DatagramPacket packet = new DatagramPacket(receiveBuf, receiveBuf.length);
 
 			//	Thread termination in this code is primitive.  When shutdown() is called (by the
@@ -94,18 +147,14 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 							throw new Exception("Bad header: got '" + headerStr + "', wanted '" + HEADER_STR + "'");
 
 						byte[] data = new byte[XFERSIZE[port - mBasePort]];
-						for(int i = 0 ; i < data.length; i++) {
-							data[i] = 1;
-						}
 						int bytesSent = 0;
 						while (bytesSent < data.length) {
 							byte[] part = new byte[HEADER_STR.length() + Math.min(data.length - bytesSent, 1000)];
 							System.arraycopy(RESPONSE_OKAY_STR.getBytes(), 0, part, 0, HEADER_STR.length());
 							System.arraycopy(data, bytesSent, part, HEADER_STR.length(), part.length - HEADER_STR.length());
-							mDatagramSocket.send( new DatagramPacket(part, part.length, packet.getAddress(), packet.getPort()));
+							DatagramPacket sendpacket = new DatagramPacket(part, part.length, packet.getAddress(), packet.getPort());
+							mDatagramSocket.send( sendpacket);
 							bytesSent += part.length - HEADER_STR.length();
-							Log.setShowLog(true);
-							Log.w(TAG,  "Length: " + part.length);
 						}
 					} catch (SocketTimeoutException e) {
 						// socket timeout is normal
@@ -116,8 +165,8 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 			} finally {
 				if ( mDatagramSocket != null ) { mDatagramSocket.close(); mDatagramSocket = null; }
 			}
-		}
 
+		}
 	}
 
 	private class TcpThread extends Thread {
@@ -132,7 +181,7 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 			this.mServerSocket = new ServerSocket();
 			this.mServerSocket.bind(new InetSocketAddress(serverIP, port));
 			this.mServerSocket.setSoTimeout(NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
-			
+
 			Log.i(TAG,  "Server socket = " + mServerSocket.getLocalSocketAddress());
 		}
 
