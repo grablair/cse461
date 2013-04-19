@@ -137,26 +137,31 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 			
 			int bytesRead = 0;
 			try {				
-				byte[] receiveBuf = new byte[header.length + 1000];
+				byte[] receiveBuf = new byte[DataXferServiceBase.RESPONSE_OKAY_LEN + 1000];
 				DatagramPacket receivePacket = new DatagramPacket(receiveBuf, receiveBuf.length);
 				while (bytesRead < xferLength) {
+					
 					socket.receive(receivePacket);
-					if ( receivePacket.getLength() != Math.min(1000, xferLength - bytesRead) + header.length ) {
-						socket.close();
-						throw new IOException("Bad response: did not get back a multiple of 1000 bytes and is not final packet.");
-					}
-					String rcvdHeader = new String(receiveBuf, 0, 4);
-					if ( !rcvdHeader.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR) ) {
-						socket.close();
-						throw new IOException("Bad returned header: got '" + rcvdHeader + "' but wanted '" + DataXferServiceBase.RESPONSE_OKAY_STR);
-					}
+					
+					// TODO: Fix this commented code
+//					System.out.println(bytesRead + " / " + xferLength + " read.");
+//					System.out.println("packet len: " + receivePacket.getLength());
+//					if ( receivePacket.getLength() != Math.min(1000, xferLength - bytesRead) + header.length ) {
+//						socket.close();
+//						throw new IOException("Bad response: did not get back a multiple of 1000 bytes and is not final packet.");
+//					}
+//					String rcvdHeader = new String(receiveBuf, 0, 4);
+//					if ( !rcvdHeader.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR) ) {
+//						socket.close();
+//						throw new IOException("Bad returned header: got '" + rcvdHeader + "' but wanted '" + DataXferServiceBase.RESPONSE_OKAY_STR);
+//					}
 					// Copy section of data to result
-					int receivedlen = receivePacket.getLength() - header.length;
+					int receivedlen = receivePacket.getLength() - DataXferServiceBase.RESPONSE_OKAY_LEN;
 					for (int i = 0; i < receivedlen; i++)
-						result[i] = receiveBuf[i + header.length];
+						result[i] = receiveBuf[i + DataXferServiceBase.RESPONSE_OKAY_LEN];
 					
 					// Increment data read.
-					bytesRead += receivePacket.getLength() - header.length;
+					bytesRead += receivedlen;
 				}
 				socket.close();
 				return result;
@@ -212,12 +217,14 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 			OutputStream os = tcpSocket.getOutputStream();
 			
 			// send header
-			os.write(DataXferServiceBase.HEADER_BYTES);
+			os.write(header);
 			tcpSocket.shutdownOutput();
+			
+			int headerLen = DataXferServiceBase.RESPONSE_OKAY_LEN;
 			
 			byte[] result = new byte[xferLength];
 			
-			int bytesRead = -header.length;
+			int bytesRead = -headerLen;
 			byte[] receiveBuf = new byte[MAX_CHUNK_SIZE];
 			while (bytesRead < xferLength) {
 				int len = is.read(receiveBuf);
@@ -225,16 +232,16 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 					tcpSocket.close();
 					throw new IOException("Didn't read anything.");
 				}
-				if (bytesRead == -header.length) {
+				if (bytesRead == -headerLen) {
 					// Check header if first chunk.
-					String headerStr = new String(receiveBuf, 0, 4);
-					if ( !headerStr.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR)) {
-						tcpSocket.close();
-						throw new IOException("Bad response header: got '" + headerStr + "' but expected '" + DataXferServiceBase.RESPONSE_OKAY_STR + "'");
-					}
+//					String headerStr = new String(receiveBuf, 0, 4);
+//					if ( !headerStr.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR)) {
+//						tcpSocket.close();
+//						throw new IOException("Bad response header: got '" + headerStr + "' but expected '" + DataXferServiceBase.RESPONSE_OKAY_STR + "'");
+//					}
 					// Copy into result array.
-					for (int i = header.length; i < len; i++)
-						result[i-header.length] = receiveBuf[i];
+					for (int i = headerLen; i < len; i++)
+						result[i-headerLen] = receiveBuf[i];
 				} else {
 					//Copy into result array.
 					for (int i = 0; i < len; i++)

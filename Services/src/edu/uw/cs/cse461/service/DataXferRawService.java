@@ -59,58 +59,58 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 
 	}
 	
-	private void Datagram(int port) throws Exception{
-		DatagramSocket mDatagramSocket;
-			
-		String serverIP = IPFinder.localIP();
-		if ( serverIP == null ) throw new Exception("IPFinder isn't providing the local IP address.  Can't run.");
-		mDatagramSocket = new DatagramSocket(new InetSocketAddress(serverIP, port));
-		mDatagramSocket.setSoTimeout(NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
-		
-		Log.i(TAG,  "Datagram socket = " + mDatagramSocket.getLocalSocketAddress());
-		
-		byte receiveBuf[] = new byte[HEADER_STR.length()];
-		
-		DatagramPacket packet = new DatagramPacket(receiveBuf, receiveBuf.length);
-
-		//	Thread termination in this code is primitive.  When shutdown() is called (by the
-		//	application's main thread, so asynchronously to the threads just mentioned) it
-		//	closes the sockets.  This causes an exception on any thread trying to read from
-		//	it, which is what provokes thread termination.
-		try {
-			while ( !mAmShutdown ) {
-				try {
-					mDatagramSocket.receive(packet);
-					if ( packet.getLength() < HEADER_STR.length() )
-						throw new Exception("Bad header: length = " + packet.getLength());
-					String headerStr = new String( receiveBuf, 0, HEADER_STR.length() );
-					if ( ! headerStr.equalsIgnoreCase(HEADER_STR) )
-						throw new Exception("Bad header: got '" + headerStr + "', wanted '" + HEADER_STR + "'");
-
-					byte[] data = new byte[XFERSIZE[port - mBasePort]];
-					for(int i = 0 ; i < data.length; i++) {
-						data[i] = 1;
-					}
-					int bytesSent = 0;
-					while (bytesSent < data.length) {
-						byte[] part = new byte[HEADER_STR.length() + Math.min(data.length - bytesSent, 1000)];
-						System.arraycopy(RESPONSE_OKAY_STR.getBytes(), 0, part, 0, HEADER_STR.length());
-						System.arraycopy(data, bytesSent, part, HEADER_STR.length(), part.length - HEADER_STR.length());
-						DatagramPacket sendpacket = new DatagramPacket(part, part.length, packet.getAddress(), packet.getPort());
-						mDatagramSocket.send( sendpacket);
-						bytesSent += part.length - HEADER_STR.length();
-					}
-				} catch (SocketTimeoutException e) {
-					// socket timeout is normal
-				} catch (Exception e) {
-					Log.w(TAG,  "Dgram reading thread caught " + e.getClass().getName() + " exception: " + e.getMessage());
-				}
-			}
-		} finally {
-			if ( mDatagramSocket != null ) { mDatagramSocket.close(); mDatagramSocket = null; }
-		}
-
-	}
+//	private void Datagram(int port) throws Exception{
+//		DatagramSocket mDatagramSocket;
+//			
+//		String serverIP = IPFinder.localIP();
+//		if ( serverIP == null ) throw new Exception("IPFinder isn't providing the local IP address.  Can't run.");
+//		mDatagramSocket = new DatagramSocket(new InetSocketAddress(serverIP, port));
+//		mDatagramSocket.setSoTimeout(NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
+//		
+//		Log.i(TAG,  "Datagram socket = " + mDatagramSocket.getLocalSocketAddress());
+//		
+//		byte receiveBuf[] = new byte[HEADER_STR.length()];
+//		
+//		DatagramPacket packet = new DatagramPacket(receiveBuf, receiveBuf.length);
+//
+//		//	Thread termination in this code is primitive.  When shutdown() is called (by the
+//		//	application's main thread, so asynchronously to the threads just mentioned) it
+//		//	closes the sockets.  This causes an exception on any thread trying to read from
+//		//	it, which is what provokes thread termination.
+//		try {
+//			while ( !mAmShutdown ) {
+//				try {
+//					mDatagramSocket.receive(packet);
+//					if ( packet.getLength() < HEADER_STR.length() )
+//						throw new Exception("Bad header: length = " + packet.getLength());
+//					String headerStr = new String( receiveBuf, 0, HEADER_STR.length() );
+//					if ( ! headerStr.equalsIgnoreCase(HEADER_STR) )
+//						throw new Exception("Bad header: got '" + headerStr + "', wanted '" + HEADER_STR + "'");
+//
+//					byte[] data = new byte[XFERSIZE[port - mBasePort]];
+//					for(int i = 0 ; i < data.length; i++) {
+//						data[i] = 1;
+//					}
+//					int bytesSent = 0;
+//					while (bytesSent < data.length) {
+//						byte[] part = new byte[HEADER_STR.length() + Math.min(data.length - bytesSent, 1000)];
+//						System.arraycopy(RESPONSE_OKAY_STR.getBytes(), 0, part, 0, HEADER_STR.length());
+//						System.arraycopy(data, bytesSent, part, HEADER_STR.length(), part.length - HEADER_STR.length());
+//						DatagramPacket sendpacket = new DatagramPacket(part, part.length, packet.getAddress(), packet.getPort());
+//						mDatagramSocket.send( sendpacket);
+//						bytesSent += part.length - HEADER_STR.length();
+//					}
+//				} catch (SocketTimeoutException e) {
+//					// socket timeout is normal
+//				} catch (Exception e) {
+//					Log.w(TAG,  "Dgram reading thread caught " + e.getClass().getName() + " exception: " + e.getMessage());
+//				}
+//			}
+//		} finally {
+//			if ( mDatagramSocket != null ) { mDatagramSocket.close(); mDatagramSocket = null; }
+//		}
+//
+//	}
 
 	private class DgramThread extends Thread {
 		int port;
@@ -128,7 +128,7 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 		}
 
 		public void run() {
-			byte receiveBuf[] = new byte[HEADER_STR.length()];
+			byte receiveBuf[] = new byte[HEADER_LEN];
 
 			DatagramPacket packet = new DatagramPacket(receiveBuf, receiveBuf.length);
 
@@ -140,21 +140,24 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 				while ( !mAmShutdown ) {
 					try {
 						mDatagramSocket.receive(packet);
-						if ( packet.getLength() < HEADER_STR.length() )
+						if ( packet.getLength() < HEADER_LEN )
 							throw new Exception("Bad header: length = " + packet.getLength());
-						String headerStr = new String( receiveBuf, 0, HEADER_STR.length() );
+						String headerStr = new String( receiveBuf, 0, HEADER_LEN );
 						if ( ! headerStr.equalsIgnoreCase(HEADER_STR) )
 							throw new Exception("Bad header: got '" + headerStr + "', wanted '" + HEADER_STR + "'");
 
+						// The full amount of data to be sent.
 						byte[] data = new byte[XFERSIZE[port - mBasePort]];
+						
+						// Split it up into 1000 byte increments.
 						int bytesSent = 0;
 						while (bytesSent < data.length) {
-							byte[] part = new byte[HEADER_STR.length() + Math.min(data.length - bytesSent, 1000)];
-							System.arraycopy(RESPONSE_OKAY_STR.getBytes(), 0, part, 0, HEADER_STR.length());
-							System.arraycopy(data, bytesSent, part, HEADER_STR.length(), part.length - HEADER_STR.length());
+							byte[] part = new byte[RESPONSE_OKAY_LEN + Math.min(data.length - bytesSent, 1000)];
+							System.arraycopy(RESPONSE_OKAY_BYTES, 0, part, 0, RESPONSE_OKAY_LEN);
+							System.arraycopy(data, bytesSent, part, RESPONSE_OKAY_LEN, part.length - RESPONSE_OKAY_LEN);
 							DatagramPacket sendpacket = new DatagramPacket(part, part.length, packet.getAddress(), packet.getPort());
 							mDatagramSocket.send( sendpacket);
-							bytesSent += part.length - HEADER_STR.length();
+							bytesSent += part.length - RESPONSE_OKAY_LEN;
 						}
 					} catch (SocketTimeoutException e) {
 						// socket timeout is normal
@@ -186,7 +189,7 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 		}
 
 		public void run() {
-			byte[] header = new byte[4];
+			byte[] header = new byte[HEADER_LEN];
 			byte[] data = new byte[XFERSIZE[port - mBasePort]];
 			int socketTimeout = NetBase.theNetBase().config().getAsInt("net.timeout.socket", 5000);
 			try {
@@ -204,12 +207,12 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 						// Read the header.  Either it gets here in one chunk or we ignore it.  (That's not exactly the
 						// spec, admittedly.)
 						int len = is.read(header);
-						if ( len != HEADER_STR.length() )
-							throw new Exception("Bad header length: got " + len + " but wanted " + HEADER_STR.length());
+						if ( len != HEADER_LEN )
+							throw new Exception("Bad header length: got " + len + " but wanted " + HEADER_LEN);
 						String headerStr = new String(header); 
 						if ( !headerStr.equalsIgnoreCase(HEADER_STR) )
 							throw new Exception("Bad header: got '" + headerStr + "' but wanted '" + HEADER_STR + "'");
-						os.write(RESPONSE_OKAY_STR.getBytes());
+						os.write(RESPONSE_OKAY_BYTES);
 
 						// Write the data in one fell swoop. ("Split it up" to be extendible to big files).
 						int bytesSent = 0;
