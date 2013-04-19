@@ -11,8 +11,6 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
-import java.util.Arrays;
-
 import edu.uw.cs.cse461.consoleapps.DataXferInterface.DataXferRawInterface;
 import edu.uw.cs.cse461.net.base.NetBase;
 import edu.uw.cs.cse461.net.base.NetLoadable.NetLoadableConsoleApp;
@@ -143,18 +141,17 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 					
 					socket.receive(receivePacket);
 					
-					// TODO: Fix this commented code
 //					System.out.println(bytesRead + " / " + xferLength + " read.");
 //					System.out.println("packet len: " + receivePacket.getLength());
-//					if ( receivePacket.getLength() != Math.min(1000, xferLength - bytesRead) + header.length ) {
-//						socket.close();
-//						throw new IOException("Bad response: did not get back a multiple of 1000 bytes and is not final packet.");
-//					}
-//					String rcvdHeader = new String(receiveBuf, 0, 4);
-//					if ( !rcvdHeader.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR) ) {
-//						socket.close();
-//						throw new IOException("Bad returned header: got '" + rcvdHeader + "' but wanted '" + DataXferServiceBase.RESPONSE_OKAY_STR);
-//					}
+					if ( receivePacket.getLength() != Math.min(1000, xferLength - bytesRead) + DataXferServiceBase.RESPONSE_OKAY_LEN ) {
+						socket.close();
+						throw new IOException("Bad response: did not get back a multiple of 1000 bytes and is not final packet.");
+					}
+					String rcvdHeader = new String(receiveBuf, 0, DataXferServiceBase.RESPONSE_OKAY_LEN);
+					if ( !rcvdHeader.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR) ) {
+						socket.close();
+						throw new IOException("Bad returned header: got '" + rcvdHeader + "' but wanted '" + DataXferServiceBase.RESPONSE_OKAY_STR);
+					}
 					// Copy section of data to result
 					int receivedlen = receivePacket.getLength() - DataXferServiceBase.RESPONSE_OKAY_LEN;
 					for (int i = 0; i < receivedlen; i++)
@@ -228,17 +225,17 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 			byte[] receiveBuf = new byte[MAX_CHUNK_SIZE];
 			while (bytesRead < xferLength) {
 				int len = is.read(receiveBuf);
-				if (len == 0) {
+				if (len <= 0) {
 					tcpSocket.close();
 					throw new IOException("Didn't read anything.");
 				}
 				if (bytesRead == -headerLen) {
 					// Check header if first chunk.
-//					String headerStr = new String(receiveBuf, 0, 4);
-//					if ( !headerStr.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR)) {
-//						tcpSocket.close();
-//						throw new IOException("Bad response header: got '" + headerStr + "' but expected '" + DataXferServiceBase.RESPONSE_OKAY_STR + "'");
-//					}
+					String headerStr = new String(receiveBuf, 0, 4);
+					if ( !headerStr.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR)) {
+						tcpSocket.close();
+						throw new IOException("Bad response header: got '" + headerStr + "' but expected '" + DataXferServiceBase.RESPONSE_OKAY_STR + "'");
+					}
 					// Copy into result array.
 					for (int i = headerLen; i < len; i++)
 						result[i-headerLen] = receiveBuf[i];
