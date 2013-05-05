@@ -36,6 +36,14 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	private static final String TAG="TCPMessageHandler";
 	
 	//--------------------------------------------------------------------------------------
+	// instance varibles
+	//--------------------------------------------------------------------------------------
+	private Socket mySocket;
+	private int myMaxReadLen;
+	private static final int MAX_READ_LEN_DEFAULT = 1000;
+	InputStream myInStream;
+	OutputStream myOutStream;
+	//--------------------------------------------------------------------------------------
 	// helper routines
 	//--------------------------------------------------------------------------------------
 
@@ -63,7 +71,10 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	protected static int byteToInt(byte buf[]) {
 		// You need to implement this.  It's the inverse of intToByte().
-		return 0;
+		ByteBuffer b = ByteBuffer.wrap(buf);
+		b.order(ByteOrder.BIG_ENDIAN);
+		int i = b.getInt();
+		return i;
 	}
 
 	/**
@@ -72,12 +83,22 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 * @throws IOException
 	 */
 	public TCPMessageHandler(Socket sock) throws IOException {
+		mySocket = sock;
+		myMaxReadLen = MAX_READ_LEN_DEFAULT;
+		myInStream = mySocket.getInputStream();
+		myOutStream = mySocket.getOutputStream();
 	}
 	
 	/**
 	 * Closes the underlying socket and renders this TCPMessageHandler useless.
 	 */
 	public void close() {
+		try {
+			mySocket.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 	
 	/**
@@ -87,7 +108,9 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	@Override
 	public int setTimeout(int timeout) throws SocketException {
-		return 0;
+		int prevTimeout = mySocket.getSoTimeout();
+		mySocket.setSoTimeout(timeout);
+		return prevTimeout;
 	}
 	
 	/**
@@ -97,7 +120,9 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	@Override
 	public boolean setNoDelay(boolean value) throws SocketException {
-		return false;
+		boolean prevNoDelay = mySocket.getTcpNoDelay();
+		mySocket.setTcpNoDelay(value);
+		return prevNoDelay;
 	}
 	
 	/**
@@ -106,7 +131,9 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	@Override
 	public int setMaxReadLength(int maxLen) {
-		return 0;
+		int prevMaxReadLen = myMaxReadLen;
+		myMaxReadLen = maxLen;
+		return prevMaxReadLen;
 	}
 
 	/**
@@ -114,7 +141,7 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	@Override
 	public int getMaxReadLength() {
-		return 0;
+		return myMaxReadLen;
 	}
 	
 	//--------------------------------------------------------------------------------------
@@ -123,6 +150,9 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	
 	@Override
 	public void sendMessage(byte[] buf) throws IOException {
+		byte[] length = intToByte(buf.length);
+		myOutStream.write(length);  // not sure if we want to do this in one write or not
+		myOutStream.write(buf);
 	}
 	
 	/**
@@ -130,6 +160,7 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	@Override
 	public void sendMessage(String str) throws IOException {
+		sendMessage(str.getBytes());
 	}
 
 	/**
@@ -137,6 +168,7 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	@Override
 	public void sendMessage(int value) throws IOException{
+		sendMessage(intToByte(value));
 	}
 	
 	/**
@@ -144,6 +176,8 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	@Override
 	public void sendMessage(JSONArray jsArray) throws IOException {
+		//TODO: not sure if this is what they are asking for
+		sendMessage(jsArray.toString());
 	}
 	
 	/**
@@ -151,6 +185,8 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	@Override
 	public void sendMessage(JSONObject jsObject) throws IOException {
+		//TODO: not sure if this is what they are asking for
+		sendMessage(jsObject.toString());
 	}
 	
 	//--------------------------------------------------------------------------------------
@@ -160,26 +196,42 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	
 	@Override
 	public byte[] readMessageAsBytes() throws IOException {
-		return null;
+		// read in the length of this message
+		int length = readMessageAsInt();
+		
+		// check if the length is short enough
+		if (length > myMaxReadLen) {
+			throw new IOException("Message length too large");
+		}
+		
+		// length is good, read in the message
+		byte[] messageBuf = new byte[length];
+		int bytesToRead = length;
+		while (bytesToRead > 0) {
+			bytesToRead -= myInStream.read(messageBuf, length - bytesToRead, bytesToRead);
+		}
+		return messageBuf;
 	}
 	
 	@Override
 	public String readMessageAsString() throws IOException {
-		return null;
+		return new String(readMessageAsBytes());
 	}
 
 	@Override
 	public int readMessageAsInt() throws IOException {
-		return 0;
+		byte[] lengthBuf = new byte[4];
+		myInStream.read(lengthBuf);
+		return byteToInt(lengthBuf);
 	}
 	
 	@Override
 	public JSONArray readMessageAsJSONArray() throws IOException, JSONException {
-		return null;
+		return new JSONArray(readMessageAsString());
 	}
 	
 	@Override
 	public JSONObject readMessageAsJSONObject() throws IOException, JSONException {
-		return null;
+		return new JSONObject(readMessageAsString());
 	}
 }
