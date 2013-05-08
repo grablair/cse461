@@ -71,9 +71,10 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	 */
 	protected static int byteToInt(byte buf[]) {
 		// You need to implement this.  It's the inverse of intToByte().
-		ByteBuffer b = ByteBuffer.wrap(buf);
-		b.order(ByteOrder.BIG_ENDIAN);
-		int i = b.getInt();
+		ByteBuffer b = ByteBuffer.allocate(4);
+		b.put(buf);
+		b.order(ByteOrder.LITTLE_ENDIAN);
+		int i = b.getInt(0);
 		return i;
 	}
 
@@ -151,8 +152,10 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	@Override
 	public void sendMessage(byte[] buf) throws IOException {
 		byte[] length = intToByte(buf.length);
-		myOutStream.write(length);  // not sure if we want to do this in one write or not
-		myOutStream.write(buf);
+		ByteBuffer message = ByteBuffer.allocate(length.length + buf.length);
+		message.put(length, 0, length.length);
+		message.put(buf, 0, buf.length);
+		myOutStream.write(message.array());
 	}
 	
 	/**
@@ -221,7 +224,7 @@ public class TCPMessageHandler implements TCPMessageHandlerInterface {
 	@Override
 	public int readMessageAsInt() throws IOException {
 		byte[] lengthBuf = new byte[4];
-		myInStream.read(lengthBuf);
+		myInStream.read(lengthBuf, 0, 4);
 		return byteToInt(lengthBuf);
 	}
 	
