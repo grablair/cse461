@@ -53,7 +53,7 @@ public class DataXferTCPMessageHandlerService extends DataXferServiceBase implem
 										throw new Exception("Bad header: '" + header + "'");
 									JSONObject obj = tcpMessageHandlerSocket.readMessageAsJSONObject();
 									int transferSize = obj.getInt("transferSize");
-									// now respond
+									// now respond with the provided amount of data.
 									tcpMessageHandlerSocket.sendMessage(DataXferServiceBase.RESPONSE_OKAY_STR);
 									byte[] data = new byte[transferSize];
 									int amountSent = 0;

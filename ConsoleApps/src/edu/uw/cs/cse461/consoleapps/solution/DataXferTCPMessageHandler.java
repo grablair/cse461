@@ -127,7 +127,7 @@ public class DataXferTCPMessageHandler extends NetLoadableConsoleApp implements 
 			String headerStr = tcpMessageHandlerSocket.readMessageAsString();
 			if ( ! headerStr.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR) )
 				throw new IOException("Bad response header: '" + headerStr + "'");
-
+			
 			// read response
 			ByteBuffer message = ByteBuffer.allocate(xferLength);
 			int bytesRead = 0;
