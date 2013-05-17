@@ -34,12 +34,11 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 
 	public DataXferRawService() throws Exception {
 		super("dataxferraw");
-
+		
 		ConfigManager config = NetBase.theNetBase().config();
 		mBasePort = config.getAsInt("dataxferraw.server.baseport", 0);
 		if ( mBasePort == 0 ) throw new RuntimeException("dataxferraw service can't run -- no dataxferraw.server.baseport entry in config file");
 		//TODO: implement this method (hint: look at echo raw service)
-
 
 		for (int i = 0 ; i < 4 ; i++) {
 			new DgramThread(mBasePort + i).start();
@@ -58,59 +57,6 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 		return "";
 
 	}
-	
-//	private void Datagram(int port) throws Exception{
-//		DatagramSocket mDatagramSocket;
-//			
-//		String serverIP = IPFinder.localIP();
-//		if ( serverIP == null ) throw new Exception("IPFinder isn't providing the local IP address.  Can't run.");
-//		mDatagramSocket = new DatagramSocket(new InetSocketAddress(serverIP, port));
-//		mDatagramSocket.setSoTimeout(NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
-//		
-//		Log.i(TAG,  "Datagram socket = " + mDatagramSocket.getLocalSocketAddress());
-//		
-//		byte receiveBuf[] = new byte[HEADER_STR.length()];
-//		
-//		DatagramPacket packet = new DatagramPacket(receiveBuf, receiveBuf.length);
-//
-//		//	Thread termination in this code is primitive.  When shutdown() is called (by the
-//		//	application's main thread, so asynchronously to the threads just mentioned) it
-//		//	closes the sockets.  This causes an exception on any thread trying to read from
-//		//	it, which is what provokes thread termination.
-//		try {
-//			while ( !mAmShutdown ) {
-//				try {
-//					mDatagramSocket.receive(packet);
-//					if ( packet.getLength() < HEADER_STR.length() )
-//						throw new Exception("Bad header: length = " + packet.getLength());
-//					String headerStr = new String( receiveBuf, 0, HEADER_STR.length() );
-//					if ( ! headerStr.equalsIgnoreCase(HEADER_STR) )
-//						throw new Exception("Bad header: got '" + headerStr + "', wanted '" + HEADER_STR + "'");
-//
-//					byte[] data = new byte[XFERSIZE[port - mBasePort]];
-//					for(int i = 0 ; i < data.length; i++) {
-//						data[i] = 1;
-//					}
-//					int bytesSent = 0;
-//					while (bytesSent < data.length) {
-//						byte[] part = new byte[HEADER_STR.length() + Math.min(data.length - bytesSent, 1000)];
-//						System.arraycopy(RESPONSE_OKAY_STR.getBytes(), 0, part, 0, HEADER_STR.length());
-//						System.arraycopy(data, bytesSent, part, HEADER_STR.length(), part.length - HEADER_STR.length());
-//						DatagramPacket sendpacket = new DatagramPacket(part, part.length, packet.getAddress(), packet.getPort());
-//						mDatagramSocket.send( sendpacket);
-//						bytesSent += part.length - HEADER_STR.length();
-//					}
-//				} catch (SocketTimeoutException e) {
-//					// socket timeout is normal
-//				} catch (Exception e) {
-//					Log.w(TAG,  "Dgram reading thread caught " + e.getClass().getName() + " exception: " + e.getMessage());
-//				}
-//			}
-//		} finally {
-//			if ( mDatagramSocket != null ) { mDatagramSocket.close(); mDatagramSocket = null; }
-//		}
-//
-//	}
 
 	private class DgramThread extends Thread {
 		int port;
@@ -131,7 +77,7 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 			byte receiveBuf[] = new byte[HEADER_LEN];
 
 			DatagramPacket packet = new DatagramPacket(receiveBuf, receiveBuf.length);
-
+			
 			//	Thread termination in this code is primitive.  When shutdown() is called (by the
 			//	application's main thread, so asynchronously to the threads just mentioned) it
 			//	closes the sockets.  This causes an exception on any thread trying to read from
@@ -212,6 +158,8 @@ public class DataXferRawService extends DataXferServiceBase implements NetLoadab
 						String headerStr = new String(header); 
 						if ( !headerStr.equalsIgnoreCase(HEADER_STR) )
 							throw new Exception("Bad header: got '" + headerStr + "' but wanted '" + HEADER_STR + "'");
+						
+						// Write response header.
 						os.write(RESPONSE_OKAY_BYTES);
 
 						// Write the data in one fell swoop. ("Split it up" to be extendible to big files).

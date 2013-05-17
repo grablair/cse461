@@ -134,9 +134,11 @@ public class DataXferRaw extends NetLoadableConsoleApp implements DataXferRawInt
 			byte[] result = new byte[xferLength];
 			
 			int bytesRead = 0;
-			try {				
+			try {
 				byte[] receiveBuf = new byte[DataXferServiceBase.RESPONSE_OKAY_LEN + 1000];
 				DatagramPacket receivePacket = new DatagramPacket(receiveBuf, receiveBuf.length);
+				
+				// Keep receiving data until the total amount is received.
 				while (bytesRead < xferLength) {
 					
 					socket.receive(receivePacket);

@@ -9,8 +9,6 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
-import java.nio.ByteBuffer;
-
 import edu.uw.cs.cse461.consoleapps.PingInterface.PingRawInterface;
 import edu.uw.cs.cse461.net.base.NetBase;
 import edu.uw.cs.cse461.net.base.NetLoadable.NetLoadableConsoleApp;
@@ -116,19 +114,18 @@ public class PingRaw extends NetLoadableConsoleApp implements PingRawInterface {
 				ElapsedTime.start("PingRaw_UDPTotalDelay");
 				DatagramSocket socket = new DatagramSocket();
 				socket.setSoTimeout(socketTimeout); // wait at most a bounded time when receiving on this socket
-				int dataLength = header.length;
 
 				DatagramPacket packet = new DatagramPacket(header, header.length, new InetSocketAddress(hostIP, udpPort));
 				socket.send(packet);  // tell the server we're here.  The server will get our IP and port from the received packet.
 
 				// we're supposed to get back what we sent (but with header contents changed),
 				// so the amount of buffer we need is equal to size of what we sent.
-				byte[] receiveBuf = new byte[dataLength];
+				byte[] receiveBuf = new byte[EchoServiceBase.RESPONSE_LEN];
 				DatagramPacket receivePacket = new DatagramPacket(receiveBuf, receiveBuf.length);
 				try { 
 					socket.receive(receivePacket);
-					if ( receivePacket.getLength() != header.length )
-						throw new Exception("Bad response: sent " + header.length + " bytes but got back " + receivePacket.getLength());
+					if ( receivePacket.getLength() != EchoServiceBase.RESPONSE_LEN )
+						throw new Exception("Bad response: expected " + EchoServiceBase.RESPONSE_LEN + " bytes but got back " + receivePacket.getLength());
 					String rcvdHeader = new String(receiveBuf,0,4);
 					if ( !rcvdHeader.equalsIgnoreCase(EchoServiceBase.RESPONSE_OKAY_STR) ) 
 						throw new Exception("Bad returned header: got '" + rcvdHeader + "' but wanted '" + EchoServiceBase.RESPONSE_OKAY_STR);
@@ -153,28 +150,30 @@ public class PingRaw extends NetLoadableConsoleApp implements PingRawInterface {
 		//TODO: implement this method
 
 		try {
-			ElapsedTime.start("PingRaw_TCPTotal");
-			Socket tcpSocket = new Socket(hostIP, tcpPort);
-			tcpSocket.setSoTimeout(socketTimeout);
-			InputStream is = tcpSocket.getInputStream();
-			OutputStream os = tcpSocket.getOutputStream();
-
-			// send header
-			os.write(EchoServiceBase.HEADER_BYTES);
-			tcpSocket.shutdownOutput();
-
-			// read the header.  Either the entire header arrives in one chunk, or we
-			// (mistakenly) reject it.
-			byte[] headerBuf = new byte[EchoServiceBase.HEADER_LEN];
-			int len = is.read(headerBuf);
-			if ( len != EchoServiceBase.HEADER_LEN )
-				throw new Exception("Bad response header length: got " + len + " but expected " + EchoServiceBase.HEADER_LEN);
-			String headerStr = new String(headerBuf);
-			if ( !headerStr.equalsIgnoreCase(EchoServiceBase.RESPONSE_OKAY_STR))
-				throw new Exception("Bad response header: got '" + headerStr + "' but expected '" + EchoServiceBase.HEADER_STR + "'");
-
-			ElapsedTime.stop("PingRaw_TCPTotal");
-			tcpSocket.close();
+			for (int i = 0; i < nTrials; i++) {
+				ElapsedTime.start("PingRaw_TCPTotal");
+				Socket tcpSocket = new Socket(hostIP, tcpPort);
+				tcpSocket.setSoTimeout(socketTimeout);
+				InputStream is = tcpSocket.getInputStream();
+				OutputStream os = tcpSocket.getOutputStream();
+	
+				// send header
+				os.write(header);
+				tcpSocket.shutdownOutput();
+	
+				// read the header.  Either the entire header arrives in one chunk, or we
+				// (mistakenly) reject it.
+				byte[] headerBuf = new byte[EchoServiceBase.RESPONSE_LEN];
+				int len = is.read(headerBuf);
+				if ( len != EchoServiceBase.RESPONSE_LEN )
+					throw new Exception("Bad response header length: got " + len + " but expected " + EchoServiceBase.RESPONSE_LEN);
+				String headerStr = new String(headerBuf);
+				if ( !headerStr.equalsIgnoreCase(EchoServiceBase.RESPONSE_OKAY_STR))
+					throw new Exception("Bad response header: got '" + headerStr + "' but expected '" + EchoServiceBase.RESPONSE_OKAY_STR + "'");
+	
+				ElapsedTime.stop("PingRaw_TCPTotal");
+				tcpSocket.close();
+			}
 		} catch (Exception e) {
 			System.out.println("Exception: " + e.getMessage());
 			ElapsedTime.abort("PingRaw_UDPTotalDelay");
