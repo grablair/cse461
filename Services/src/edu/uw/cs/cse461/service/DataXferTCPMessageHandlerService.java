@@ -90,4 +90,13 @@ public class DataXferTCPMessageHandlerService extends DataXferServiceBase implem
 		tcpThread.start();
 	}
 	
+	@Override
+	public String dumpState() {
+		StringBuilder sb = new StringBuilder(super.dumpState());
+		sb.append("\nListening on: ");
+		if ( mServerSocket != null ) sb.append(mServerSocket.toString());
+		sb.append("\n");
+		return sb.toString();
+	}
+	
 }

@@ -96,6 +96,7 @@ public class DataXferTCPMessageHandler extends NetLoadableConsoleApp implements 
 				TransferRate.stop("xfer", xferLength);
 			} catch (ConnectException e) {
 				TransferRate.abort("xfer", xferLength);
+				System.out.println("xfer trial failed: " + e.getMessage());
 			} catch (Exception e) {
 				TransferRate.abort("xfer", xferLength);
 				System.out.println("xfer trial failed: " + e.getMessage());
@@ -127,7 +128,7 @@ public class DataXferTCPMessageHandler extends NetLoadableConsoleApp implements 
 			String headerStr = tcpMessageHandlerSocket.readMessageAsString();
 			if ( ! headerStr.equalsIgnoreCase(DataXferServiceBase.RESPONSE_OKAY_STR) )
 				throw new IOException("Bad response header: '" + headerStr + "'");
-			
+
 			// read response
 			ByteBuffer message = ByteBuffer.allocate(xferLength);
 			int bytesRead = 0;
