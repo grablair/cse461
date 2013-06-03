@@ -13,6 +13,9 @@ import org.json.JSONObject;
 
 import edu.uw.cs.cse461.net.base.NetBase;
 import edu.uw.cs.cse461.net.base.NetLoadable.NetLoadableService;
+import edu.uw.cs.cse461.net.rpc.RPCMessage.RPCCallMessage.RPCControlMessage;
+import edu.uw.cs.cse461.net.rpc.RPCMessage.RPCCallMessage.RPCInvokeMessage;
+import edu.uw.cs.cse461.net.tcpmessagehandler.TCPMessageHandler;
 import edu.uw.cs.cse461.util.Log;
 
 /**
@@ -114,7 +117,39 @@ public class RPCCall extends NetLoadableService {
 			int socketTimeout,        // max time to wait for reply
 			boolean tryAgain          // true if an invocation failure on a persistent connection should cause a re-try of the call, false to give up
 			) throws JSONException, IOException {
-		return null;
+		
+		// create a socket and message handler for sending messages
+		RPCCallerSocket callSocket = new RPCCallerSocket(ip, port, false);
+		TCPMessageHandler msgHandle = new TCPMessageHandler(callSocket);
+		msgHandle.setTimeout(socketTimeout);
+		
+		// handshake
+		JSONObject args = new JSONObject().put("action", "connect");
+		RPCMessage sendMsg = new RPCControlMessage(args);
+		msgHandle.sendMessage(sendMsg.marshall());
+		RPCMessage recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
+		
+		// check good handshake
+		if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
+			throw new IOException("Handshake - Expected type 'OK' but got type " + recMsg.type());
+		}
+		
+		// we need to send the call now
+		// first construct the JSONObject that will get sent
+		sendMsg = new RPCInvokeMessage(serviceName, method, userRequest);
+		
+		// send the invoking call
+		msgHandle.sendMessage(sendMsg.marshall());
+		
+		// receive the response
+		recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
+		
+		// check if it is a good response
+		if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
+			throw new IOException("Invoke - Expected type 'OK' but got type " + recMsg.type());
+		}
+		
+		return recMsg.marshall();
 	}
 	
 	@Override
