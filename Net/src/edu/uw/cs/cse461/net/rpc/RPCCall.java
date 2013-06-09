@@ -5,6 +5,7 @@ import java.net.SocketException;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -34,6 +35,9 @@ import edu.uw.cs.cse461.util.Log;
  */
 public class RPCCall extends NetLoadableService {
 	private static final String TAG="RPCCall";
+	
+	// Map from service name to pair of message handler and keep alive boolean value
+	private static Map<String, Pair<TCPMessageHandler, Boolean>> services;
 
 	//-------------------------------------------------------------------------------------------
 	//-------------------------------------------------------------------------------------------
@@ -90,6 +94,7 @@ public class RPCCall extends NetLoadableService {
 	 */
 	public RPCCall() {
 		super("rpccall");
+		services = new HashMap<String, Pair<TCPMessageHandler, Boolean> >();
 	}
 
 	/**
@@ -118,46 +123,133 @@ public class RPCCall extends NetLoadableService {
 			boolean tryAgain          // true if an invocation failure on a persistent connection should cause a re-try of the call, false to give up
 			) throws JSONException, IOException {
 		
-		// create a socket and message handler for sending messages
-		RPCCallerSocket callSocket = new RPCCallerSocket(ip, port, false);
-		TCPMessageHandler msgHandle = new TCPMessageHandler(callSocket);
-		msgHandle.setTimeout(socketTimeout);
 		
-		// handshake
-		JSONObject args = new JSONObject().put("action", "connect");
-		RPCMessage sendMsg = new RPCControlMessage(args);
-		msgHandle.sendMessage(sendMsg.marshall());
-		RPCMessage recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
-		
-		// check good handshake
-		if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
-			throw new IOException("Handshake - Expected type 'OK' but got type " + recMsg.type());
-		}
+		// get the TCPMessageHandler associated with the service
+		TCPMessageHandler msgHandle = getService(serviceName, ip, port, socketTimeout);
 		
 		// we need to send the call now
 		// first construct the JSONObject that will get sent
-		sendMsg = new RPCInvokeMessage(serviceName, method, userRequest);
+		RPCMessage sendMsg = new RPCInvokeMessage(serviceName, method, userRequest);
+		String msgString = sendMsg.toString();
 		
 		// send the invoking call
 		msgHandle.sendMessage(sendMsg.marshall());
 		
 		// receive the response
-		recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
+		RPCMessage recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
+		msgString = recMsg.toString();
 		
 		// check if it is a good response
 		if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
-			throw new IOException("Invoke - Expected type 'OK' but got type " + recMsg.type());
+			// retry if we should
+			if (tryAgain) {
+				// send the invoking call
+				msgHandle.sendMessage(sendMsg.marshall());
+				
+				// receive the response
+				recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
+				if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
+					throw new IOException("Invoke - Expected type 'OK' but got type " + recMsg.type());
+				}
+			} else {
+				throw new IOException("Invoke - Expected type 'OK' but got type " + recMsg.type());
+			}
 		}
 		
-		return recMsg.marshall();
+		// remove the service if we don't keep it alive
+		removeService(serviceName);
+		
+		return recMsg.marshall().getJSONObject("value");
+	}
+	
+	public TCPMessageHandler getService(String serviceName, String ip, int port, int socketTimeout) throws JSONException, IOException {
+		// return the service if there is already one active
+		if (services.containsKey(serviceName)) {
+			return services.get(serviceName).getFirst();
+		}
+		// otherwise make a new service, add it to the services map and return it
+		// create a socket and message handler for sending messages
+		// also setup the service with a handshake
+		RPCCallerSocket callSocket = new RPCCallerSocket(ip, port, false);
+		TCPMessageHandler msgHandle = new TCPMessageHandler(callSocket);
+		msgHandle.setTimeout(socketTimeout);
+		
+		// handshake
+		JSONObject options = new JSONObject().put("connection", "keep-alive");
+		RPCMessage sendMsg = new RPCControlMessage("connect", options);
+		String msgString = sendMsg.toString();
+		msgHandle.sendMessage(sendMsg.marshall());
+		RPCMessage recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
+		msgString = recMsg.toString();
+		// check good handshake
+		if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
+			throw new IOException("Handshake - Expected type 'OK' but got type " + recMsg.type());
+		}
+		
+		// should we keep this connection alive or not
+		
+		boolean keepAlive = recMsg.marshall().getJSONObject("value").getString("connection").equals("keep-alive");
+		
+		services.put(serviceName, new Pair<TCPMessageHandler, Boolean>(msgHandle, keepAlive));
+		
+		return msgHandle;
+		
+	}
+	
+	public void removeService(String serviceName) {
+		// remove the service if it exists and is not persistent 
+		if (services.containsKey(serviceName)) {
+			if (!services.get(serviceName).getSecond())
+				services.remove(serviceName);
+		}
 	}
 	
 	@Override
+	// clear all persistent connections
 	public void shutdown() {
+		// close each connection
+		for (Pair<TCPMessageHandler, Boolean> serv : services.values()) {
+			serv.getFirst().close();
+		}
+		
+		// clear the map
+		for (String servName : services.keySet()) {
+			services.remove(servName);
+		}
 	}
 	
 	@Override
 	public String dumpState() {
-		return "Current persistent connections are ...";
+		String message = "Current persistent connections are ...\n";
+		for (String servName : services.keySet()) {
+			message = message.concat(servName + "\n");
+		}
+		return message;
+	}
+	
+	public class Pair<F, S> {
+	    private F first; //first member of pair
+	    private S second; //second member of pair
+
+	    public Pair(F first, S second) {
+	        this.first = first;
+	        this.second = second;
+	    }
+
+	    public void setFirst(F first) {
+	        this.first = first;
+	    }
+
+	    public void setSecond(S second) {
+	        this.second = second;
+	    }
+
+	    public F getFirst() {
+	        return first;
+	    }
+
+	    public S getSecond() {
+	        return second;
+	    }
 	}
 }
