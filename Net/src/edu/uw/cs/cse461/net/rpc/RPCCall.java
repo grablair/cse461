@@ -159,7 +159,12 @@ public class RPCCall extends NetLoadableService {
 		// remove the service if we don't keep it alive
 		removeService(serviceName);
 		
-		return recMsg.marshall().getJSONObject("value");
+		JSONObject value = recMsg.marshall().optJSONObject("value");
+		if (value == null) {
+			throw new IOException("Invoke - Expected value but got null");
+		}
+		
+		return value;
 	}
 	
 	public TCPMessageHandler getService(String serviceName, String ip, int port, int socketTimeout) throws JSONException, IOException {
@@ -173,6 +178,7 @@ public class RPCCall extends NetLoadableService {
 		RPCCallerSocket callSocket = new RPCCallerSocket(ip, port, false);
 		TCPMessageHandler msgHandle = new TCPMessageHandler(callSocket);
 		msgHandle.setTimeout(socketTimeout);
+		msgHandle.setMaxReadLength(Integer.MAX_VALUE);
 		
 		// handshake
 		JSONObject options = new JSONObject().put("connection", "keep-alive");
