@@ -183,6 +183,7 @@ public class RPCCall extends NetLoadableService {
 		return message;
 	}
 	
+	// class to manage persistent services
 	private class ServiceManager {
 		private Map<String, ServiceState<TCPMessageHandler, Boolean, TimerTask>> services;
 		private Timer timer;
@@ -196,6 +197,7 @@ public class RPCCall extends NetLoadableService {
 			return services.keySet();
 		}
 		
+		// resets a service if there was an error
 		public TCPMessageHandler resetService(String serviceName, String ip, int port, int socketTimeout) throws JSONException, IOException {
 			// try and send some data
 			try {
@@ -210,7 +212,7 @@ public class RPCCall extends NetLoadableService {
 			return getService(serviceName, ip, port, socketTimeout);
 		}
 		
-		
+		// gets a service by establishing it or returning an active one
 		public TCPMessageHandler getService(String serviceName, String ip, int port, int socketTimeout) throws JSONException, IOException {
 		
 			// return the service if there is already one active
@@ -220,6 +222,7 @@ public class RPCCall extends NetLoadableService {
 				state.timertask.cancel();
 				state.timertask = new PersistenceTask(serviceName);
 				timer.schedule(state.timertask, NetBase.theNetBase().config().getAsInt("rpc.persistence.timeout", 30000));
+				timer.purge();
 				return state.handler;
 			}
 			// otherwise make a new service, add it to the services map and return it
@@ -251,6 +254,7 @@ public class RPCCall extends NetLoadableService {
 			return msgHandle;
 		}
 		
+		// removes a service if it is not persistent
 		public ServiceState<TCPMessageHandler, Boolean, TimerTask> removeService(String serviceName) {
 			// remove the service if it exists and is not persistent 
 			if (services.containsKey(serviceName)) {
@@ -260,6 +264,7 @@ public class RPCCall extends NetLoadableService {
 			return null;
 		}
 		
+		// shutdown the services
 		public void shutdown() {
 			// close each connection
 			for (ServiceState<TCPMessageHandler, Boolean, TimerTask> serv : services.values()) {
@@ -271,8 +276,11 @@ public class RPCCall extends NetLoadableService {
 			for (String servName : services.keySet()) {
 				services.remove(servName);
 			}
+			timer.purge();
+			timer.cancel();
 		}
 		
+		// timer task to be executed on persistence timeout
 		private class PersistenceTask extends TimerTask {
 			private String serviceName;
 			
@@ -290,6 +298,7 @@ public class RPCCall extends NetLoadableService {
 		
 	}
 	
+	// holds the state for a service
 	private class ServiceState<H, P, T> {
 	    private H handler;
 	    private P persistence;
