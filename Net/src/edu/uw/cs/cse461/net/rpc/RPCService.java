@@ -28,7 +28,8 @@ import edu.uw.cs.cse461.util.Log;
  * Implements the side of RPC that receives remote invocation requests.
  * 
  * @author zahorjan
- *
+ * @author grahamb5
+ * @author brymar
  */
 public class RPCService extends NetLoadableService implements Runnable, RPCServiceInterface {
 	private static final String TAG="RPCService";
@@ -52,6 +53,22 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	public RPCService() throws Exception {
 		super("rpc");
 		rpcMethods = new HashMap<Pair<String, String>, RPCCallableMethod>();
+		
+		String serverIP = IPFinder.localIP();
+		int tcpPort = NetBase.theNetBase().config().getAsInt("rpc.server.port", 0);
+		mServerSocket = new ServerSocket();
+		mServerSocket.bind(new InetSocketAddress(serverIP, tcpPort));
+		mServerSocket.setSoTimeout( NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
+		
+		// Create a thread pool for this service.
+		threadPool = Executors.newFixedThreadPool(NUM_THREADS);
+		
+		new Thread() {
+			@Override
+			public void run() {
+				RPCService.this.run();
+			}
+		}.start();
 	}
 	
 	/**
@@ -60,35 +77,21 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	 */
 	@Override
 	public void run() {
-		try {
-			while (!mAmShutdown) {
-				String serverIP = IPFinder.localIP();
-				int tcpPort = NetBase.theNetBase().config().getAsInt("rpc.server.port", 0);
-				mServerSocket = new ServerSocket();
-				mServerSocket.bind(new InetSocketAddress(serverIP, tcpPort));
-				mServerSocket.setSoTimeout( NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
+		while (!mAmShutdown) {
+			try {
+				TCPMessageHandler handler = new TCPMessageHandler(mServerSocket.accept());
 				
-				// Create a thread pool for this service.
-				threadPool = Executors.newFixedThreadPool(NUM_THREADS);
-				while (!mAmShutdown) {
-					try {
-						TCPMessageHandler handler = new TCPMessageHandler(mServerSocket.accept());
-						
-						// Spawn a thread to process this connection.
-						threadPool.execute(new RPCConnection(handler));
-					} catch (SocketTimeoutException e) {
-						// this is normal.  Just loop back and see if we're terminating.
-					} catch (IOException e) {
-						Log.w(TAG, "Unable to accept new connection.");
-					}
-				}
+				// Spawn a thread to process this connection.
+				threadPool.execute(new RPCConnection(handler));
+			} catch (SocketTimeoutException e) {
+				// this is normal.  Just loop back and see if we're terminating.
+			} catch (IOException e) {
+				Log.w(TAG, "Unable to accept new connection.");
 			}
-		} catch (IOException ioe) {
-			Log.w(TAG, "Server thread exiting due to exception: " + ioe.getMessage());
-		} finally {
-			if (mServerSocket != null && !mServerSocket.isClosed())
-				try { mServerSocket.close(); } catch (IOException e) { }
 		}
+		
+		if (mServerSocket != null && !mServerSocket.isClosed())
+			try { mServerSocket.close(); } catch (IOException e) { }
 	}
 	
 	/**
@@ -134,6 +137,13 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 		return "";
 	}
 	
+	/**
+	 * This class handles a RPCConnection. It performs an initial handshake,
+	 * and then the procedure call, if the call is valid.
+	 * 
+	 * @author grahamb5
+	 * @author brymar
+	 */
 	private class RPCConnection implements Runnable {
 		private TCPMessageHandler handler;
 		private boolean keepAlive;
