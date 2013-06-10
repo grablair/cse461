@@ -2,10 +2,12 @@ package edu.uw.cs.cse461.net.rpc;
 
 import java.io.IOException;
 import java.net.SocketException;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -37,7 +39,7 @@ public class RPCCall extends NetLoadableService {
 	private static final String TAG="RPCCall";
 	
 	// Map from service name to pair of message handler and keep alive boolean value
-	private static Map<String, Pair<TCPMessageHandler, Boolean>> services;
+	private static ServiceManager services;
 
 	//-------------------------------------------------------------------------------------------
 	//-------------------------------------------------------------------------------------------
@@ -94,7 +96,7 @@ public class RPCCall extends NetLoadableService {
 	 */
 	public RPCCall() {
 		super("rpccall");
-		services = new HashMap<String, Pair<TCPMessageHandler, Boolean> >();
+		services = new ServiceManager();
 	}
 
 	/**
@@ -125,7 +127,7 @@ public class RPCCall extends NetLoadableService {
 		
 		
 		// get the TCPMessageHandler associated with the service
-		TCPMessageHandler msgHandle = getService(serviceName, ip, port, socketTimeout);
+		TCPMessageHandler msgHandle = services.getService(serviceName, ip, port, socketTimeout);
 		
 		// we need to send the call now
 		// first construct the JSONObject that will get sent
@@ -143,6 +145,8 @@ public class RPCCall extends NetLoadableService {
 		if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
 			// retry if we should
 			if (tryAgain) {
+				// get the service again incase it timed out
+				msgHandle = services.getService(serviceName, ip, port, socketTimeout);
 				// send the invoking call
 				msgHandle.sendMessage(sendMsg.marshall());
 				
@@ -157,7 +161,7 @@ public class RPCCall extends NetLoadableService {
 		}
 		
 		// remove the service if we don't keep it alive
-		removeService(serviceName);
+		services.removeService(serviceName);
 		
 		JSONObject value = recMsg.marshall().optJSONObject("value");
 		if (value == null) {
@@ -167,61 +171,12 @@ public class RPCCall extends NetLoadableService {
 		return value;
 	}
 	
-	public TCPMessageHandler getService(String serviceName, String ip, int port, int socketTimeout) throws JSONException, IOException {
-		// return the service if there is already one active
-		if (services.containsKey(serviceName)) {
-			return services.get(serviceName).getFirst();
-		}
-		// otherwise make a new service, add it to the services map and return it
-		// create a socket and message handler for sending messages
-		// also setup the service with a handshake
-		RPCCallerSocket callSocket = new RPCCallerSocket(ip, port, false);
-		TCPMessageHandler msgHandle = new TCPMessageHandler(callSocket);
-		msgHandle.setTimeout(socketTimeout);
-		msgHandle.setMaxReadLength(Integer.MAX_VALUE);
-		
-		// handshake
-		JSONObject options = new JSONObject().put("connection", "keep-alive");
-		RPCMessage sendMsg = new RPCControlMessage("connect", options);
-		String msgString = sendMsg.toString();
-		msgHandle.sendMessage(sendMsg.marshall());
-		RPCMessage recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
-		msgString = recMsg.toString();
-		// check good handshake
-		if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
-			throw new IOException("Handshake - Expected type 'OK' but got type " + recMsg.type());
-		}
-		
-		// should we keep this connection alive or not
-		
-		boolean keepAlive = recMsg.marshall().getJSONObject("value").getString("connection").equals("keep-alive");
-		
-		services.put(serviceName, new Pair<TCPMessageHandler, Boolean>(msgHandle, keepAlive));
-		
-		return msgHandle;
-		
-	}
 	
-	public void removeService(String serviceName) {
-		// remove the service if it exists and is not persistent 
-		if (services.containsKey(serviceName)) {
-			if (!services.get(serviceName).getSecond())
-				services.remove(serviceName);
-		}
-	}
 	
 	@Override
 	// clear all persistent connections
 	public void shutdown() {
-		// close each connection
-		for (Pair<TCPMessageHandler, Boolean> serv : services.values()) {
-			serv.getFirst().close();
-		}
-		
-		// clear the map
-		for (String servName : services.keySet()) {
-			services.remove(servName);
-		}
+		services.shutdown();
 	}
 	
 	@Override
@@ -233,29 +188,110 @@ public class RPCCall extends NetLoadableService {
 		return message;
 	}
 	
-	public class Pair<F, S> {
-	    private F first; //first member of pair
-	    private S second; //second member of pair
+	private class ServiceManager {
+		private Map<String, ServiceState<TCPMessageHandler, Boolean, TimerTask>> services;
+		private Timer timer;
+		
+		public ServiceManager() {
+			services = new HashMap<String, ServiceState<TCPMessageHandler, Boolean, TimerTask>>();
+			timer = new Timer();
+		}
+		
+		public Set<String> keySet() {
+			return services.keySet();
+		}
+		
+		
+		public TCPMessageHandler getService(String serviceName, String ip, int port, int socketTimeout) throws JSONException, IOException {
+		
+			// return the service if there is already one active
+			if (services.containsKey(serviceName)) {
+				// reset the persistence timeout
+				ServiceState<TCPMessageHandler, Boolean, TimerTask> state = services.get(serviceName);
+				state.timertask.cancel();
+				state.timertask = new PersistenceTask(serviceName);
+				timer.schedule(state.timertask, NetBase.theNetBase().config().getAsInt("rpc.persistence.timeout", 30000));
+				return state.handler;
+			}
+			// otherwise make a new service, add it to the services map and return it
+			// create a socket and message handler for sending messages
+			// also setup the service with a handshake
+			RPCCallerSocket callSocket = new RPCCallerSocket(ip, port, false);
+			TCPMessageHandler msgHandle = new TCPMessageHandler(callSocket);
+			msgHandle.setTimeout(socketTimeout);
+			msgHandle.setMaxReadLength(Integer.MAX_VALUE);
+			
+			// handshake
+			JSONObject options = new JSONObject().put("connection", "keep-alive");
+			RPCMessage sendMsg = new RPCControlMessage("connect", options);
+			String msgString = sendMsg.toString();
+			msgHandle.sendMessage(sendMsg.marshall());
+			RPCMessage recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
+			msgString = recMsg.toString();
+			// check good handshake
+			if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
+				throw new IOException("Handshake - Expected type 'OK' but got type " + recMsg.type());
+			}
+			
+			// should we keep this connection alive or not
+			
+			boolean keepAlive = recMsg.marshall().getJSONObject("value").getString("connection").equals("keep-alive");
+			
+			services.put(serviceName, new ServiceState<TCPMessageHandler, Boolean, TimerTask>(msgHandle, keepAlive, new PersistenceTask(serviceName)));
+			timer.schedule(services.get(serviceName).timertask, NetBase.theNetBase().config().getAsInt("rpc.persistence.timeout", 30000));
+			return msgHandle;
+		}
+		
+		public ServiceState<TCPMessageHandler, Boolean, TimerTask> removeService(String serviceName) {
+			// remove the service if it exists and is not persistent 
+			if (services.containsKey(serviceName)) {
+				if (!services.get(serviceName).persistence)
+					return services.remove(serviceName);
+			}
+			return null;
+		}
+		
+		public void shutdown() {
+			// close each connection
+			for (ServiceState<TCPMessageHandler, Boolean, TimerTask> serv : services.values()) {
+				serv.handler.close();
+				serv.timertask.cancel();
+			}
+			
+			// clear the map
+			for (String servName : services.keySet()) {
+				services.remove(servName);
+			}
+		}
+		
+		private class PersistenceTask extends TimerTask {
+			private String serviceName;
+			
+			PersistenceTask(String serviceName) {
+				super();
+				this.serviceName = serviceName;
+			}
 
-	    public Pair(F first, S second) {
-	        this.first = first;
-	        this.second = second;
+			@Override
+			public void run() {
+				services.remove(serviceName);
+			}
+			
+		}
+		
+	}
+	
+	private class ServiceState<H, P, T> {
+	    private H handler;
+	    private P persistence;
+	    private T timertask;
+
+	    public ServiceState(H handler, P persistence, T timertask) {
+	        this.handler = handler;
+	        this.persistence = persistence;
+	        this.timertask = timertask;
 	    }
 
-	    public void setFirst(F first) {
-	        this.first = first;
-	    }
-
-	    public void setSecond(S second) {
-	        this.second = second;
-	    }
-
-	    public F getFirst() {
-	        return first;
-	    }
-
-	    public S getSecond() {
-	        return second;
-	    }
+	    
 	}
 }
