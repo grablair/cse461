@@ -1,16 +1,11 @@
 package edu.uw.cs.cse461.net.rpc;
 
-import java.io.EOFException;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
-import java.net.Socket;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -23,7 +18,6 @@ import edu.uw.cs.cse461.net.base.NetLoadable.NetLoadableService;
 import edu.uw.cs.cse461.net.rpc.RPCMessage.RPCCallMessage;
 import edu.uw.cs.cse461.net.rpc.RPCMessage.RPCCallMessage.RPCControlMessage;
 import edu.uw.cs.cse461.net.rpc.RPCMessage.RPCCallMessage.RPCInvokeMessage;
-import edu.uw.cs.cse461.net.rpc.RPCMessage.RPCResponseMessage;
 import edu.uw.cs.cse461.net.rpc.RPCMessage.RPCResponseMessage.RPCErrorResponseMessage;
 import edu.uw.cs.cse461.net.rpc.RPCMessage.RPCResponseMessage.RPCNormalResponseMessage;
 import edu.uw.cs.cse461.net.tcpmessagehandler.TCPMessageHandler;
@@ -38,16 +32,14 @@ import edu.uw.cs.cse461.util.Log;
  */
 public class RPCService extends NetLoadableService implements Runnable, RPCServiceInterface {
 	private static final String TAG="RPCService";
+	private static final boolean ALLOW_PERSISTENCE = true;
 	
 	private final Map<Pair<String, String>, RPCCallableMethod> rpcMethods;
 	private ServerSocket mServerSocket = null;
 	private ExecutorService threadPool = null;
 	
 	private static final int NUM_THREADS = 40;
-	
-	private int currentId = 1;
-	private final String HOST;
-	
+		
 	/**
 	 * Constructor.  Creates the Java ServerSocket and binds it to a port.
 	 * If the config file specifies an rpc.server.port value, it should be bound to that port.
@@ -60,7 +52,6 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	public RPCService() throws Exception {
 		super("rpc");
 		rpcMethods = new HashMap<Pair<String, String>, RPCCallableMethod>();
-		HOST = "";
 	}
 	
 	/**
@@ -70,21 +61,27 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	@Override
 	public void run() {
 		try {
-			String serverIP = IPFinder.localIP();
-			int tcpPort = 0;
-			mServerSocket = new ServerSocket();
-			mServerSocket.bind(new InetSocketAddress(serverIP, tcpPort));
-			mServerSocket.setSoTimeout( NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
-			
-			threadPool = Executors.newFixedThreadPool(NUM_THREADS);
-			
-			try {
-				TCPMessageHandler handler = new TCPMessageHandler(mServerSocket.accept());
-				handler.setMaxReadLength(Integer.MAX_VALUE);
-
-				threadPool.execute(new RCPConnection(handler));
-			} catch (SocketTimeoutException e) {
-				// this is normal.  Just loop back and see if we're terminating.
+			while (!mAmShutdown) {
+				String serverIP = IPFinder.localIP();
+				int tcpPort = NetBase.theNetBase().config().getAsInt("rpc.server.port", 0);
+				mServerSocket = new ServerSocket();
+				mServerSocket.bind(new InetSocketAddress(serverIP, tcpPort));
+				mServerSocket.setSoTimeout( NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
+				
+				// Create a thread pool for this service.
+				threadPool = Executors.newFixedThreadPool(NUM_THREADS);
+				while (!mAmShutdown) {
+					try {
+						TCPMessageHandler handler = new TCPMessageHandler(mServerSocket.accept());
+						
+						// Spawn a thread to process this connection.
+						threadPool.execute(new RPCConnection(handler));
+					} catch (SocketTimeoutException e) {
+						// this is normal.  Just loop back and see if we're terminating.
+					} catch (IOException e) {
+						Log.w(TAG, "Unable to accept new connection.");
+					}
+				}
 			}
 		} catch (IOException ioe) {
 			Log.w(TAG, "Server thread exiting due to exception: " + ioe.getMessage());
@@ -137,65 +134,105 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 		return "";
 	}
 	
-	public synchronized int getIdAndInc() {
-		return currentId++;
-	}
-	
-	
-	private class RCPConnection implements Runnable {
+	private class RPCConnection implements Runnable {
 		private TCPMessageHandler handler;
+		private boolean keepAlive;
+		private int commandsExecuted = 0;
 		
-		public RCPConnection(TCPMessageHandler handler) {
+		public RPCConnection(TCPMessageHandler handler) throws SocketException {
 			this.handler = handler;
+			handler.setMaxReadLength(Integer.MAX_VALUE);
+			handler.setTimeout(NetBase.theNetBase().config().getAsInt("net.timeout.socket", 10000));
 		}
 		
 		@Override
 		public void run() {
-			// Handshake
-			RPCMessage connectMsg = null;
+			// Perform handshake
+			RPCMessage rawConnectMsg = null;
 			try {
-				connectMsg = RPCMessage.unmarshall(handler.readMessageAsString());
+				// Get message.
+				rawConnectMsg = RPCMessage.unmarshall(handler.readMessageAsString());
 				
-				RPCMessage successMsg = new RPCNormalResponseMessage(connectMsg.id(), null);
+				// Convert to control message.
+				RPCControlMessage connectMsg = (RPCControlMessage) rawConnectMsg;
+				keepAlive = connectMsg.getOption("connection").equalsIgnoreCase("keep-alive");
+				
+				// Create response message.
+				JSONObject retval = ALLOW_PERSISTENCE && keepAlive ? 
+						new JSONObject().put("connection", "keep-alive") : null;
+				RPCMessage successMsg = new RPCNormalResponseMessage(connectMsg.id(), retval);
+				
+				// Change timeout if there is persistence.
+				if (retval != null)
+					handler.setTimeout(NetBase.theNetBase().config().getAsInt("rpc.persistence.timeout", 25000));
+				
+				// Send message.
 				handler.sendMessage(successMsg.marshall());
-			} catch (IOException | JSONException e) {
+			} catch (IOException | JSONException | ClassCastException e) {
 				try {
-					RPCMessage errorMsg = new RPCErrorResponseMessage(connectMsg.id(), e.getMessage(), null);
+					// Try to send error, assuming enough information exists.
+					RPCMessage errorMsg = new RPCErrorResponseMessage(rawConnectMsg.id(), e.getMessage(), null);
 					handler.sendMessage(errorMsg.marshall());
 				} catch (Exception e2) { }
+				
+				// Handshake failed. Close connection and return.
+				handler.close();
 				return;
 			}
 			
-			//Success. Wait for invocation.
+			// Wait for invocation message(s).
 			RPCMessage invocationMsg = null;
 			try {
-				invocationMsg = RPCMessage.unmarshall(handler.readMessageAsString());
-				
-				if (invocationMsg instanceof RPCInvokeMessage) {
-					RPCInvokeMessage invokeMsg = (RPCInvokeMessage) invocationMsg;
-					RPCCallableMethod method = rpcMethods.get(Pair.pair(invokeMsg.app(), invokeMsg.method()));
-					if (method != null) {
-						JSONObject result = method.handleCall(invokeMsg.args());
-						
-						RPCNormalResponseMessage responseMsg = new RPCNormalResponseMessage(invokeMsg.id(), result);
-						handler.sendMessage(responseMsg.marshall());
-					} else {
-						throw new Exception("No app/method of that combination found.");
+				// Enter the loop only once if we are not
+				// keeping it alive.
+				while (commandsExecuted++ == 0 || keepAlive) {
+					// Get message.
+					invocationMsg = RPCMessage.unmarshall(handler.readMessageAsString());
+					try {
+						if (invocationMsg instanceof RPCInvokeMessage) {
+							// Is a valid invocation message.
+							RPCInvokeMessage invokeMsg = (RPCInvokeMessage) invocationMsg;
+							RPCCallableMethod method = rpcMethods.get(Pair.pair(invokeMsg.app(), invokeMsg.method()));
+							if (method != null) {
+								// The requested method is registered.
+								JSONObject result = method.handleCall(invokeMsg.args());
+								
+								RPCNormalResponseMessage responseMsg = new RPCNormalResponseMessage(invokeMsg.id(), result);
+								handler.sendMessage(responseMsg.marshall());
+							} else {
+								// Send non-connection breaking error.
+								throw new Exception("No (app, method) of the requested combination is registered: " + 
+										Pair.pair(invokeMsg.app(), invokeMsg.method()));
+							}
+						} else {
+							// Send non-connection breaking error.
+							throw new Exception("Expected RPCInvokeMessage but got " + invocationMsg.getClass());
+						}
+					} catch (Exception e) {
+						// Send non-connection-breaking error message.
+						// Breaks connection on failure.
+						RPCCallMessage sendErrorInfo = invocationMsg instanceof RPCCallMessage ?
+								(RPCCallMessage) invocationMsg : null;
+						RPCMessage errorMsg = new RPCErrorResponseMessage(invocationMsg.id(), e.getMessage(), sendErrorInfo);
+						handler.sendMessage(errorMsg.marshall());
 					}
-				} else {
-					throw new Exception("Expected RPCInvokeMessage but got " + invocationMsg.getClass());
 				}
+			} catch (SocketTimeoutException ste) {
+				Log.w(TAG, "Socket timed out.");
 			} catch (Exception e) {
 				try {
-					RPCMessage errorMsg = new RPCErrorResponseMessage(connectMsg.id(), e.getMessage(), (RPCCallMessage) invocationMsg);
+					// Try to send connection-breaking error.
+					RPCMessage errorMsg = new RPCErrorResponseMessage(invocationMsg.id(), e.getMessage(), (RPCCallMessage) invocationMsg);
 					handler.sendMessage(errorMsg.marshall());
 				} catch (Exception e2) { }
-				return;
+				Log.w(TAG, "Unable to process invocation due to " + e.getClass());
+			} finally {
+				handler.close();
 			}
 		}
 	}
 	
-	
+	// Simple pair-of-values class.
 	private static class Pair<E, T> {
 		private E left;
 		private T right;
@@ -221,6 +258,11 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 						right.equals(((Pair<?, ?>) other).right);				
 			}
 			return false;
+		}
+		
+		@Override
+		public String toString() {
+			return "(" + left + ", " + right + ")";
 		}
 	}
 }
