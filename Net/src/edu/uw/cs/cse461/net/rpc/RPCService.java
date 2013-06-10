@@ -126,7 +126,7 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	 */
 	@Override
 	public int localPort() {
-		return mServerSocket == null ? 0 : mServerSocket.getLocalPort();
+		return mServerSocket == null ? -1 : mServerSocket.getLocalPort();
 	}
 	
 	@Override
