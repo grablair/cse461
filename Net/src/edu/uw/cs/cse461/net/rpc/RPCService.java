@@ -54,6 +54,15 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 		super("rpc");
 		rpcMethods = new HashMap<Pair<String, String>, RPCCallableMethod>();
 		
+		String serverIP = IPFinder.localIP();
+		int tcpPort = NetBase.theNetBase().config().getAsInt("rpc.server.port", 0);
+		mServerSocket = new ServerSocket();
+		mServerSocket.bind(new InetSocketAddress(serverIP, tcpPort));
+		mServerSocket.setSoTimeout( NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
+		
+		// Create a thread pool for this service.
+		threadPool = Executors.newFixedThreadPool(NUM_THREADS);
+		
 		new Thread() {
 			@Override
 			public void run() {
@@ -70,29 +79,17 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	public void run() {
 		try {
 			while (!mAmShutdown) {
-				String serverIP = IPFinder.localIP();
-				int tcpPort = NetBase.theNetBase().config().getAsInt("rpc.server.port", 0);
-				mServerSocket = new ServerSocket();
-				mServerSocket.bind(new InetSocketAddress(serverIP, tcpPort));
-				mServerSocket.setSoTimeout( NetBase.theNetBase().config().getAsInt("net.timeout.granularity", 500));
-				
-				// Create a thread pool for this service.
-				threadPool = Executors.newFixedThreadPool(NUM_THREADS);
-				while (!mAmShutdown) {
-					try {
-						TCPMessageHandler handler = new TCPMessageHandler(mServerSocket.accept());
-						
-						// Spawn a thread to process this connection.
-						threadPool.execute(new RPCConnection(handler));
-					} catch (SocketTimeoutException e) {
-						// this is normal.  Just loop back and see if we're terminating.
-					} catch (IOException e) {
-						Log.w(TAG, "Unable to accept new connection.");
-					}
+				try {
+					TCPMessageHandler handler = new TCPMessageHandler(mServerSocket.accept());
+					
+					// Spawn a thread to process this connection.
+					threadPool.execute(new RPCConnection(handler));
+				} catch (SocketTimeoutException e) {
+					// this is normal.  Just loop back and see if we're terminating.
+				} catch (IOException e) {
+					Log.w(TAG, "Unable to accept new connection.");
 				}
 			}
-		} catch (IOException ioe) {
-			Log.w(TAG, "Server thread exiting due to exception: " + ioe.getMessage());
 		} finally {
 			if (mServerSocket != null && !mServerSocket.isClosed())
 				try { mServerSocket.close(); } catch (IOException e) { }
