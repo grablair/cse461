@@ -41,9 +41,7 @@ public class DataXferRPCService extends DataXferServiceBase {
 	 * Key used for DataXferRPC's header, in the args of an RPC call.
 	 * The header element is a string (DataXferServiceBase.HEADER_STR).
 	 */
-	public static final String HEADER_KEY = "header";
-	public static final String HEADER_TAG_KEY = "tag";
-	public static final String HEADER_XFER_LEN_KEY = "xferLength";
+	
 
 	/**
 	 * Key used for DataXferRPC's payload, in the args of an RPC call
@@ -64,7 +62,7 @@ public class DataXferRPCService extends DataXferServiceBase {
 		// Set up the method descriptor variable to refer to this->_echo()
 		xfer = new RPCCallableMethod(this, "_xfer");
 		// Register the method with the RPC service as externally invocable method "echo"
-		((RPCService)NetBase.theNetBase().getService("rpc")).registerHandler(loadablename(), "xfer", xfer);
+		((RPCService)NetBase.theNetBase().getService("rpc")).registerHandler(loadablename(), "dataxfer", xfer);
 	}
 
 	public JSONObject _xfer(JSONObject args) throws Exception {

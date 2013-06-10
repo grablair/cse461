@@ -134,7 +134,17 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	
 	@Override
 	public String dumpState() {
-		return "";
+		StringBuilder message = new StringBuilder();
+		message.append("Listening at ");
+		message.append(mServerSocket.getLocalSocketAddress() + "\n");
+		
+		message.append("Registered apps/methods:\n");
+		
+		for (Pair<String, String> app : rpcMethods.keySet()) {
+			message.append(app.left + ": " + app.right + "\n");
+		}
+		
+		return message.toString();
 	}
 	
 	/**

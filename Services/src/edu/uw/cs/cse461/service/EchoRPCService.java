@@ -83,7 +83,8 @@ public class EchoRPCService extends EchoServiceBase  {
 		JSONObject header = args.getJSONObject(EchoRPCService.HEADER_KEY);
 		if ( header == null  || !header.has(HEADER_TAG_KEY) || !header.getString(HEADER_TAG_KEY).equalsIgnoreCase(HEADER_STR))
 			throw new Exception("Missing or incorrect header value: '" + header + "'");
-
+		header.put(HEADER_TAG_KEY, RESPONSE_OKAY_STR);
+		args.put(EchoRPCService.HEADER_KEY, header);
 		return args;
 	}
 }

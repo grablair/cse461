@@ -12,6 +12,10 @@ public abstract class DataXferServiceBase  extends NetLoadableService {
 	public static final String RESPONSE_OKAY_STR = "okay";
 	public static final byte[] RESPONSE_OKAY_BYTES = RESPONSE_OKAY_STR.getBytes();
 	public static final int RESPONSE_OKAY_LEN = RESPONSE_OKAY_BYTES.length;
+	
+	public static final String HEADER_KEY = "header";
+	public static final String HEADER_TAG_KEY = "tag";
+	public static final String HEADER_XFER_LEN_KEY = "xferLength";
 		
 	/**
 	 * Pass subclass's loadable name up to base class.

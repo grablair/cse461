@@ -134,30 +134,25 @@ public class RPCCall extends NetLoadableService {
 		RPCMessage sendMsg = new RPCInvokeMessage(serviceName, method, userRequest);
 		String msgString = sendMsg.toString();
 		
-		// send the invoking call
-		msgHandle.sendMessage(sendMsg.marshall());
-		
+		try {
+			// send the invoking call
+			msgHandle.sendMessage(sendMsg.marshall());
+		} catch (Exception e) {
+			// retry if we should
+			if (tryAgain) {
+				// get the service again incase it timed out
+				msgHandle = services.resetService(serviceName, ip, port, socketTimeout);
+				msgHandle.sendMessage(sendMsg.marshall());
+			}
+		}
+
 		// receive the response
 		RPCMessage recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
 		msgString = recMsg.toString();
 		
 		// check if it is a good response
 		if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
-			// retry if we should
-			if (tryAgain) {
-				// get the service again incase it timed out
-				msgHandle = services.getService(serviceName, ip, port, socketTimeout);
-				// send the invoking call
-				msgHandle.sendMessage(sendMsg.marshall());
-				
-				// receive the response
-				recMsg = RPCMessage.unmarshall(msgHandle.readMessageAsString());
-				if (recMsg.type() == "ERROR" || recMsg.type() != "OK") {
-					throw new IOException("Invoke - Expected type 'OK' but got type " + recMsg.type());
-				}
-			} else {
-				throw new IOException("Invoke - Expected type 'OK' but got type " + recMsg.type());
-			}
+			throw new IOException("Invoke - Expected type 'OK' but got type " + recMsg.type());
 		}
 		
 		// remove the service if we don't keep it alive
@@ -199,6 +194,20 @@ public class RPCCall extends NetLoadableService {
 		
 		public Set<String> keySet() {
 			return services.keySet();
+		}
+		
+		public TCPMessageHandler resetService(String serviceName, String ip, int port, int socketTimeout) throws JSONException, IOException {
+			// try and send some data
+			try {
+				if (services.containsKey(serviceName)) {
+					services.get(serviceName).handler.sendMessage(0);
+				}
+			} catch (IOException e) {
+				// persistence dropped at the other end, reset
+				services.remove(serviceName);
+				return getService(serviceName, ip, port, socketTimeout);
+			}
+			return getService(serviceName, ip, port, socketTimeout);
 		}
 		
 		

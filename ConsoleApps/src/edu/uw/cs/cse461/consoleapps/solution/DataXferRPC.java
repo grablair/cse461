@@ -73,8 +73,8 @@ public class DataXferRPC extends NetLoadableConsoleApp implements DataXferRPCInt
 			//-----------------------------------------------------
 			// TCP transfer
 			//-----------------------------------------------------
-			JSONObject header = new JSONObject().put(EchoRPCService.HEADER_TAG_KEY, DataXferServiceBase.HEADER_STR)
-												.put("xferLength", xferLength);
+			JSONObject header = new JSONObject().put(DataXferServiceBase.HEADER_TAG_KEY, DataXferServiceBase.HEADER_STR)
+												.put(DataXferServiceBase.HEADER_XFER_LEN_KEY, xferLength);
 			TransferRateInterval xferStats = DataXferRate(header, server, targetPort, socketTimeout, nTrials);
 
 			System.out.println("\nTCP: xfer rate = " + String.format("%9.0f", xferStats.mean() * 1000.0) + " bytes/sec.");
@@ -94,19 +94,19 @@ public class DataXferRPC extends NetLoadableConsoleApp implements DataXferRPCInt
 		
 		for ( int trial=0; trial<nTrials; trial++) {
 			try {
-				TransferRate.start("xfer");
+				TransferRate.start(DataXferServiceBase.HEADER_STR);
 				DataXfer(header, hostIP, port, timeout);
-				TransferRate.stop("xfer", header.optLong("xferLength"));
+				TransferRate.stop(DataXferServiceBase.HEADER_STR, header.optLong(DataXferServiceBase.HEADER_XFER_LEN_KEY));
 			} catch (ConnectException e) {
-				TransferRate.abort("xfer", header.optLong("xferLength"));
+				TransferRate.abort(DataXferServiceBase.HEADER_STR, header.optLong(DataXferServiceBase.HEADER_XFER_LEN_KEY));
 				System.out.println("xfer trial failed: " + e.getMessage());
 			} catch (Exception e) {
-				TransferRate.abort("xfer", header.optLong("xferLength"));
+				TransferRate.abort(DataXferServiceBase.HEADER_STR, header.optLong(DataXferServiceBase.HEADER_XFER_LEN_KEY));
 				System.out.println("xfer trial failed: " + e.getMessage());
 			}
 		
 		}
-		return TransferRate.get("xfer");
+		return TransferRate.get(DataXferServiceBase.HEADER_STR);
 	}
 	
 	
