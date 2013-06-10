@@ -77,23 +77,21 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	 */
 	@Override
 	public void run() {
-		try {
-			while (!mAmShutdown) {
-				try {
-					TCPMessageHandler handler = new TCPMessageHandler(mServerSocket.accept());
-					
-					// Spawn a thread to process this connection.
-					threadPool.execute(new RPCConnection(handler));
-				} catch (SocketTimeoutException e) {
-					// this is normal.  Just loop back and see if we're terminating.
-				} catch (IOException e) {
-					Log.w(TAG, "Unable to accept new connection.");
-				}
+		while (!mAmShutdown) {
+			try {
+				TCPMessageHandler handler = new TCPMessageHandler(mServerSocket.accept());
+				
+				// Spawn a thread to process this connection.
+				threadPool.execute(new RPCConnection(handler));
+			} catch (SocketTimeoutException e) {
+				// this is normal.  Just loop back and see if we're terminating.
+			} catch (IOException e) {
+				Log.w(TAG, "Unable to accept new connection.");
 			}
-		} finally {
-			if (mServerSocket != null && !mServerSocket.isClosed())
-				try { mServerSocket.close(); } catch (IOException e) { }
 		}
+		
+		if (mServerSocket != null && !mServerSocket.isClosed())
+			try { mServerSocket.close(); } catch (IOException e) { }
 	}
 	
 	/**
