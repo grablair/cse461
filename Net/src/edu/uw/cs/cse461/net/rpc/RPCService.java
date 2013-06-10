@@ -28,7 +28,8 @@ import edu.uw.cs.cse461.util.Log;
  * Implements the side of RPC that receives remote invocation requests.
  * 
  * @author zahorjan
- *
+ * @author grahamb5
+ * @author brymar
  */
 public class RPCService extends NetLoadableService implements Runnable, RPCServiceInterface {
 	private static final String TAG="RPCService";
@@ -52,6 +53,13 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 	public RPCService() throws Exception {
 		super("rpc");
 		rpcMethods = new HashMap<Pair<String, String>, RPCCallableMethod>();
+		
+		new Thread() {
+			@Override
+			public void run() {
+				RPCService.this.run();
+			}
+		}.start();
 	}
 	
 	/**
@@ -134,6 +142,13 @@ public class RPCService extends NetLoadableService implements Runnable, RPCServi
 		return "";
 	}
 	
+	/**
+	 * This class handles a RPCConnection. It performs an initial handshake,
+	 * and then the procedure call, if the call is valid.
+	 * 
+	 * @author grahamb5
+	 * @author brymar
+	 */
 	private class RPCConnection implements Runnable {
 		private TCPMessageHandler handler;
 		private boolean keepAlive;
